@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# framework/default <action> <build-dir>
+
+# fail hard
+set -o pipefail
+# fail harder
+set -e
+
+BUILD_DIR="$2"
+BP_DIR=$(cd $(dirname $0); cd ..; pwd)
+
+case "$1" in
+  detect)
+    exit 1
+  ;;
+  compile)
+    echo "-----> Setting up default app"
+    cp "$BP_DIR/conf/nginx/default_site.erb" "$BUILD_DIR/.conf/nginx.conf.erb"
+    cp "$BP_DIR/conf/php/default_site.erb" "$BUILD_DIR/.conf/php.conf.erb"
+    cp "$BP_DIR/conf/rsyslog/default_conf.erb" "$BUILD_DIR/.conf/rsyslog.conf.erb"
+  ;;
+esac

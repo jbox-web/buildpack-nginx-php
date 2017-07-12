@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+
+# bin/compile <build-dir> <cache-dir> <env-dir>
+
+# fail hard
+set -o pipefail
+# fail harder
+set -e
+# move hidden files too, just in case
+shopt -s dotglob
+
+BUILD_DIR=$1
+CACHE_DIR=$2
+
+# convenience functions
+BP_DIR=$(cd $(dirname $0); cd ..; pwd)
+source $BP_DIR/bin/common.sh
+source $BP_DIR/bin/package_installer.sh
+
+if [ -n "$BUILDPACK_DEBUG" ] ; then
+  set -x
+fi
+
+BUILDPACK_CLEAN_CACHE=
+GET_PACKAGE_LIST=
+LOG_FILES=( '/var/log/php/error.log' '/var/log/nginx/access.log' '/var/log/nginx/error.log' )
+
+# if [ -n "$BUILDPACK_DEBUG" ] ; then
+#   ls -R "$BUILD_DIR"
+# fi
+
+status "Install BuildPack's applications"
+
+# Install LAMP stack
+install_package 'nginx'
+install_package 'php5'
+
+echo 'Install configuration files' | indent
+install_configuration
+
+status 'Loading data from composer.json'
+
+# Step into BUILD_DIR
+cd $BUILD_DIR
+
+# Create conf dir for future template files
+mkdir -p .conf
+
+FRAMEWORK=
+PHP_INCLUDES=
+NGINX_INCLUDES=
+
+# Read config variables from composer.json if it exists
+if [ -f "$BUILD_DIR/composer.json" ] ; then
+  FRAMEWORK=$(package_framework)
+  PHP_INCLUDES=$(package_php_includes)
+  NGINX_INCLUDES=$(package_nginx_includes)
+fi
+
+for include in $PHP_INCLUDES ; do
+  cp "$BUILD_DIR/$include" '/etc/php5/conf.d/'
+done
+
+status 'Detecting framework'
+
+# Detect PHP framework
+for f in "$BP_DIR/frameworks/"* ; do
+  if "$f" detect "$BUILD_DIR" ; then
+    FRAMEWORK="$f"
+  fi
+done
+
+# Fall back to classic mode
+if [ -z "$FRAMEWORK" ] ; then
+  FRAMEWORK="$BP_DIR/frameworks/default"
+fi
+
+# Try to load the framework from the "frameworks" directory if it's just a
+# simple framework name like "symfony2"
+if [ ! -f "$FRAMEWORK" ] && [ -f "$BP_DIR/frameworks/$FRAMEWORK" ] ; then
+  FRAMEWORK="$BP_DIR/frameworks/$FRAMEWORK"
+fi
+
+if [ ! -f "$FRAMEWORK" ] ; then
+  echo "Framework \"$FRAMEWORK\" not found!" | indent
+  exit 1
+fi
+
+"$FRAMEWORK" compile "$BUILD_DIR" "$CACHE_DIR"
+
+if [ -n "$FRAMEWORK" ] && [ -f "$FRAMEWORK" ] ; then
+  "$FRAMEWORK" end "$BUILD_DIR" "$CACHE_DIR"
+fi
+
+"$FRAMEWORK" post-compile "$BUILD_DIR" "$CACHE_DIR" || true
+
+mkdir -p 'vendor/bin'
+
+cat > 'vendor/bin/run' <<SH
+#!/usr/bin/env bash
+
+for file in /app/.profile.d/*; do source \$file; done
+hash -r
+
+`init_logger_fifo ${LOG_FILES[@]}`
+
+export NGINX_INCLUDES="$NGINX_INCLUDES"
+
+exec /sbin/my_init
+
+SH
+
+
+cat > 'vendor/bin/cron' <<SH
+#!/usr/bin/env bash
+
+pmsgr=/tmp/pmsgr
+rm -f \$pmsgr
+mkfifo \$pmsgr
+
+for file in /app/.profile.d/*; do source \$file; done
+hash -r
+
+erb /app/.conf/rsyslog.conf.erb > /etc/rsyslog.conf
+
+(
+  exec /usr/sbin/rsyslogd -n
+  \$pmsgr < "rsyslogd"
+)&
+
+(
+  exec /usr/sbin/cron -f
+  \$pmsgr < "cron"
+)&
+
+read exitproc <\$pmsgr
+echo "Boot failed: \$exitproc"
+exit 1
+
+SH
+
+chmod +x 'vendor/bin/run'
+chmod +x 'vendor/bin/cron'

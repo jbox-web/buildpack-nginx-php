@@ -1,0 +1,51 @@
+<% require "shellwords" %>
+server {
+  listen         0.0.0.0:<%= ENV['PORT'] %>;
+  server_name    <%= ENV['SITE_DNS'] %>;
+  root           /app;
+
+  # This is for Rsyslog
+  access_log /var/log/nginx/access.log;
+  error_log  /var/log/nginx/error.log error;
+
+  # This is for Docker
+  access_log /dev/stdout;
+  error_log  /dev/stderr error;
+
+  index index.php index.html index.htm default.html default.htm;
+
+  # Support Clean (aka Search Engine Friendly) URLs
+  location / {
+    try_files $uri $uri/ /index.php?$args;
+  }
+
+  location ~ \.php$ {
+    include /etc/nginx/fastcgi.conf;
+    try_files $uri =404;
+    fastcgi_pass unix:/var/run/php5-fpm.sock;
+  }
+
+  # caching of files
+  #
+  location ~* \.(ico|pdf|flv|js|css|png|jpg|jpeg|gif|swf|xml|txt)$ {
+    expires 14d;
+  }
+
+  # deny access to . files, for security
+  #
+  location ~ /\. {
+    log_not_found off;
+    deny all;
+  }
+
+  # deny running scripts inside writable directories
+  #
+  location ~* /(images|cache|media|logs|tmp)/.*\.(php|pl|py|jsp|asp|sh|cgi)$ {
+    return 403;
+    error_page 403 /403_error.html;
+  }
+
+  <% Shellwords.split(ENV['NGINX_INCLUDES'].to_s).each do |f| %>
+  include /app/<%= f %>;
+  <% end %>
+}

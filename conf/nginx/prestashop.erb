@@ -1,0 +1,50 @@
+<% require "shellwords" %>
+server {
+  listen         0.0.0.0:<%= ENV['PORT'] %>;
+  server_name    <%= ENV['SITE_DNS'] %>;
+  root           /app;
+
+  # This is for Rsyslog
+  access_log /var/log/nginx/access.log;
+  error_log  /var/log/nginx/error.log error;
+
+  # This is for Docker
+  access_log /dev/stdout;
+  error_log  /dev/stderr error;
+
+  index index.php index.html index.htm default.html default.htm;
+
+  # Support Clean (aka Search Engine Friendly) URLs
+  location / {
+    rewrite ^/api/?(.*)$ /webservice/dispatcher.php?url=$1 last;
+    rewrite ^/([0-9])(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/$1/$1$2.jpg last;
+    rewrite ^/([0-9])([0-9])(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/$1/$2/$1$2$3.jpg last;
+    rewrite ^/([0-9])([0-9])([0-9])(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/$1/$2/$3/$1$2$3$4.jpg last;
+    rewrite ^/([0-9])([0-9])([0-9])([0-9])(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/$1/$2/$3/$4/$1$2$3$4$5.jpg last;
+    rewrite ^/([0-9])([0-9])([0-9])([0-9])([0-9])(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/$1/$2/$3/$4/$5/$1$2$3$4$5$6.jpg last;
+    rewrite ^/([0-9])([0-9])([0-9])([0-9])([0-9])([0-9])(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/$1/$2/$3/$4/$5/$6/$1$2$3$4$5$6$7.jpg last;
+    rewrite ^/([0-9])([0-9])([0-9])([0-9])([0-9])([0-9])([0-9])(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/$1/$2/$3/$4/$5/$6/$7/$1$2$3$4$5$6$7$8.jpg last;
+    rewrite ^/([0-9])([0-9])([0-9])([0-9])([0-9])([0-9])([0-9])([0-9])(-[_a-zA-Z0-9-]*)?(-[0-9]+)?/.+\.jpg$ /img/p/$1/$2/$3/$4/$5/$6/$7/$8/$1$2$3$4$5$6$7$8$9.jpg last;
+    rewrite ^/c/([0-9]+)(-[_a-zA-Z0-9-]*)(-[0-9]+)?/.+\.jpg$ /img/c/$1$2.jpg last;
+    rewrite ^/c/([a-zA-Z-]+)(-[0-9]+)?/.+\.jpg$ /img/c/$1.jpg last;
+    rewrite ^/([0-9]+)(-[_a-zA-Z0-9-]*)(-[0-9]+)?/.+\.jpg$ /img/c/$1$2.jpg last;
+    try_files $uri $uri/ /index.php?$args;
+  }
+
+  location ~ \.php$ {
+    include /etc/nginx/fastcgi.conf;
+    try_files $uri =404;
+    fastcgi_pass unix:/var/run/php5-fpm.sock;
+  }
+
+  # deny access to . files, for security
+  #
+  location ~ /\. {
+    log_not_found off;
+    deny all;
+  }
+
+  <% Shellwords.split(ENV['NGINX_INCLUDES'].to_s).each do |f| %>
+  include /app/<%= f %>;
+  <% end %>
+}

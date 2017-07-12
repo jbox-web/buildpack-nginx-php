@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# framework/joomla <action> <build-dir>
+
+# fail hard
+set -o pipefail
+# fail harder
+set -e
+
+BUILD_DIR="$2"
+BP_DIR=$(cd $(dirname $0); cd ..; pwd)
+
+function sets_framework_joomla() {
+  [ $(jq --raw-output '.extra.heroku.framework' < "$BUILD_DIR/composer.json") == "joomla" ]
+}
+
+case "$1" in
+  detect)
+    if [ ! -f "$BUILD_DIR/composer.json" ] ; then
+      exit 1
+    fi
+
+    if sets_framework_joomla ; then
+      echo "-----> Detected Joomla app"
+      exit 0
+    else
+      exit 1
+    fi
+  ;;
+  compile)
+    echo "-----> Setting up Joomla app"
+    cp "$BP_DIR/conf/nginx/joomla.erb" "$BUILD_DIR/.conf/nginx.conf.erb"
+    cp "$BP_DIR/conf/php/default_site.erb" "$BUILD_DIR/.conf/php.conf.erb"
+    cp "$BP_DIR/conf/rsyslog/default_conf.erb" "$BUILD_DIR/.conf/rsyslog.conf.erb"
+  ;;
+esac
